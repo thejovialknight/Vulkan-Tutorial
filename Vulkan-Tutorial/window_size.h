@@ -1,4 +1,4 @@
 #pragma once
 
-const int win_width = 800;
-const int win_height = 600;
+const int WIN_WIDTH = 800;
+const int WIN_HEIGHT = 600;

@@ -1,9 +1,13 @@
+#include <iostream>
+
 #include "application.h"
 #include "win32.h"
 
 #define OS WINDOWS
 
 int WINAPI WinMain(HINSTANCE hinst, HINSTANCE hprevinst, LPSTR lpcmdline, int ncmdshow) {
+	std::cout << "Hello World!" << std::endl;
+
 #pragma region Win32
 
 	WNDCLASSEX window_class; // information for window class
@@ -61,8 +65,19 @@ int WINAPI WinMain(HINSTANCE hinst, HINSTANCE hprevinst, LPSTR lpcmdline, int nc
 			}
 		}
 		else {
-			// GAME CODE
+			DrawFrameResult draw_result = draw_frame(vulkan, hwnd);
+			if (draw_result == DRAW_FRAME_RECREATION_REQUESTED) {
+				RecreateSwapChainResult recreate_result = recreate_swap_chain(vulkan, hwnd);
+				if (recreate_result == RECREATE_SWAP_CHAIN_WINDOW_MINIMIZED) {
+					IVec2 window_size = get_window_size(hwnd);
+					while (window_size.x == 0 || window_size.y == 0) {
+						window_size = get_window_size(hwnd);
+						std::cout << "GETTING SIZE" << std::endl;
+					}
+				}
+			}
 		}
+		vkDeviceWaitIdle(vulkan.device);
 	}
 
 #pragma endregion

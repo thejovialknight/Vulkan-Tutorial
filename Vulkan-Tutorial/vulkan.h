@@ -1,7 +1,11 @@
+// TODO: We should allocate multiple resources like buffers from a single mem allocation, but
+// also, we should store multiple buffers like the vertex and index bufers into a single VkBuffer and
+// use offsets in commands like vkCmdBindVertexBuffers. MORE CACHE FRIENDLY!
+// Some vulkan functions have explicit flags to specify we want to do this.
+
 #pragma once
 #define VK_USE_PLATFORM_WIN32_KHR
 #define NOMINMAX
-//#define VK_KHR_WIN32_SURFACE_EXTENSION_NAME
 
 #include <iostream>
 #include <stdexcept>
@@ -13,24 +17,48 @@
 #include <vector>
 #include <map>
 #include <set>
+#include <optional>
+#include <array>
 
 #include <vulkan/vulkan.h>
-#include <optional>
+#include <glm/glm.hpp>
 
 #include "window_size.h"
+#include "file_helpers.h"
+#include "win32.h"
 
 #ifdef NDEBUG
-const bool enable_validation_layers = false;
+const bool ENABLE_VALIDATION_LAYERS = false;
 #else
-const bool enable_validation_layers = true;
+const bool ENABLE_VALIDATION_LAYERS = true;
 #endif
 
-const std::vector<const char*> validation_layers = {
+const std::vector<const char*> VALIDATION_LAYERS = {
 	"VK_LAYER_KHRONOS_validation"
 };
 
-const std::vector<const char*> device_extensions = {
+const std::vector<const char*> DEVICE_EXTENSIONS = {
 	VK_KHR_SWAPCHAIN_EXTENSION_NAME
+};
+
+const int MAX_FRAMES_IN_FLIGHT = 2;
+
+// Possibly belongs in its own platform agnostic file
+struct Vertex {
+	glm::vec2 position;
+	glm::vec3 color;
+};
+
+// This is what will be passed by outside, presumptively
+const std::vector<Vertex> vertices = {
+	{{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+	{{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
+	{{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
+	{{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}}
+};
+
+const std::vector<uint16_t> indices = {
+	0, 1, 2, 2, 3, 0
 };
 
 struct QueueFamilyIndices {
@@ -44,11 +72,14 @@ struct SwapChainSupportInfo {
 	std::vector<VkPresentModeKHR> present_modes;
 };
 
-struct CreateSwapChainResults {
-	VkSwapchainKHR swap_chain;
-	std::vector<VkImage> images;
-	VkFormat format;
-	VkExtent2D extent;
+enum RecreateSwapChainResult {
+	RECREATE_SWAP_CHAIN_SUCCESS,
+	RECREATE_SWAP_CHAIN_WINDOW_MINIMIZED
+};
+
+enum DrawFrameResult {
+	DRAW_FRAME_SUCCESS,
+	DRAW_FRAME_RECREATION_REQUESTED
 };
 
 struct Vulkan {
@@ -57,25 +88,65 @@ struct Vulkan {
 	VkPhysicalDevice physical_device = VK_NULL_HANDLE;
 	VkDevice device;
 	VkQueue graphics_queue;
+	VkQueue present_queue;
 	VkSurfaceKHR surface;
 	VkSwapchainKHR swap_chain;
 	std::vector<VkImage> swap_chain_images;
 	VkFormat swap_chain_format;
 	VkExtent2D swap_chain_extent;
 	std::vector<VkImageView> swap_chain_image_views;
+	VkPipeline graphics_pipeline;
+	VkRenderPass render_pass;
+	VkPipelineLayout pipeline_layout;
+	std::vector<VkFramebuffer> swap_chain_framebuffers;
+	VkCommandPool command_pool;
+	VkBuffer vertex_buffer;
+	VkDeviceMemory vertex_buffer_memory;
+	VkBuffer index_buffer;
+	VkDeviceMemory index_buffer_memory;
+	std::vector<VkCommandBuffer> command_buffers;
+	
+	std::vector<VkSemaphore> image_available_semaphores;
+	std::vector<VkSemaphore> render_finished_semaphores;
+	std::vector<VkFence> in_flight_fences;
+
+	bool framebuffer_resized = false;
+	uint32_t current_frame = 0;
 };
 
 Vulkan init_vulkan(HINSTANCE hinst, HWND hwnd);
+void enable_validation_layers();
 VkInstance create_instance();
 VkSurfaceKHR create_surface(VkInstance instance, HWND hwnd, HINSTANCE hinst);
 VkPhysicalDevice create_physical_device(VkInstance instance, VkSurfaceKHR surface);
 VkDevice create_logical_device(VkPhysicalDevice physical_device, VkSurfaceKHR surface, VkQueue& graphics_queue, VkQueue& present_queue);
-CreateSwapChainResults create_swap_chain(VkPhysicalDevice physical_device, VkSurfaceKHR surface, VkDevice device);
-std::vector<VkImageView> create_swap_chain_image_views();
+VkSwapchainKHR create_swap_chain(VkPhysicalDevice physical_device, VkSurfaceKHR surface, VkDevice device, IVec2 window_size,
+	std::vector<VkImage>& out_images, VkFormat& out_format, VkExtent2D& out_extent);
+std::vector<VkImageView> create_swap_chain_image_views(std::vector<VkImage>& images, VkFormat format, VkDevice device);
+VkRenderPass create_render_pass(VkFormat swap_chain_image_format, VkDevice device);
+VkPipeline create_graphics_pipeline(VkDevice device, VkExtent2D swap_chain_extent, VkRenderPass render_pass, VkPipelineLayout& out_layout);
+VkShaderModule create_shader_module(const std::vector<char>& code, VkDevice device);
+std::vector<VkFramebuffer> create_framebuffers(std::vector<VkImageView>& swap_chain_image_views, VkRenderPass render_pass, VkExtent2D swap_chain_extent, VkDevice device);
+VkCommandPool create_command_pool(VkPhysicalDevice physical_device, VkSurfaceKHR surface, VkDevice device);
+VkBuffer create_vertex_buffer(VkDevice device, VkPhysicalDevice physical_device, VkDeviceMemory& out_buffer_memory, VkCommandPool command_pool, VkQueue graphics_queue);
+VkBuffer create_index_buffer(VkDevice device, VkPhysicalDevice physical_device, VkCommandPool command_pool, VkQueue graphics_queue, VkDeviceMemory& out_buffer_memory);
+std::vector<VkCommandBuffer> create_command_buffers(VkCommandPool command_pool, VkDevice device);
+void create_sync_objects(VkDevice device, std::vector<VkSemaphore>& image_available_semaphores, std::vector<VkSemaphore>& render_finished_semaphores, std::vector<VkFence>& in_flight_fences);
+
+void record_command_buffer(VkCommandBuffer command_buffer, uint32_t image_index, VkRenderPass render_pass,
+	std::vector<VkFramebuffer>& swap_chain_framebuffers, VkExtent2D swap_chain_extent, VkPipeline graphics_pipeline, VkBuffer vertex_buffer, VkBuffer index_buffer);
+DrawFrameResult draw_frame(Vulkan& vulkan, HWND hwnd);
+RecreateSwapChainResult recreate_swap_chain(Vulkan& vulkan, HWND hwnd);
 
 QueueFamilyIndices get_queue_families(const VkPhysicalDevice device, VkSurfaceKHR surface);
 bool queue_families_validated(QueueFamilyIndices indices);
 SwapChainSupportInfo get_swap_chain_support(VkPhysicalDevice device, VkSurfaceKHR surface);
 int rate_device_suitability(VkPhysicalDevice device, VkSurfaceKHR surface);
+static VkVertexInputBindingDescription get_vertex_binding_description();
+static std::array<VkVertexInputAttributeDescription, 2> get_vertex_attribute_descriptions();
+uint32_t get_memory_type(uint32_t type_filter, VkMemoryPropertyFlags properties, VkPhysicalDevice physical_device);
+VkBuffer create_vulkan_buffer(VkDevice device, VkPhysicalDevice physical_device, VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkDeviceMemory& out_buffer_memory);
+void copy_vulkan_buffer(VkBuffer src, VkBuffer dst, VkDeviceSize size, VkDevice device, VkCommandPool command_pool, VkQueue graphics_queue);
 
-void cleanup_vulkan(Vulkan vulkan);
+void cleanup_swap_chain(VkDevice device, std::vector<VkFramebuffer>& framebuffers, std::vector<VkImageView>& image_views, VkSwapchainKHR swap_chain);
+void cleanup_vulkan(Vulkan& vulkan);

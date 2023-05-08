@@ -21,7 +21,7 @@ Win32 winmain(HINSTANCE& hinst, HINSTANCE& hprevinst, LPSTR& lpcmdline, int ncmd
 	RegisterClassEx(&window_class);
 
 	// Determine window size
-	RECT window_rect = { 0, 0, win_width, win_height };
+	RECT window_rect = { 0, 0, WIN_WIDTH, WIN_HEIGHT };
 	AdjustWindowRect(&window_rect, WS_OVERLAPPEDWINDOW, FALSE);
 
 	// Create window handle
@@ -74,4 +74,14 @@ LRESULT CALLBACK WindowProc(HWND window_handle, UINT message, WPARAM w_param, LP
 	}
 
 	return DefWindowProc(window_handle, message, w_param, l_param);
+}
+
+IVec2 get_window_size(HWND hwnd) {
+	IVec2 size;
+	RECT rect;
+	if (GetWindowRect(hwnd, &rect)) {
+		size.x = rect.right - rect.left;
+		size.y = rect.bottom - rect.top;
+	}
+	return size;
 }
