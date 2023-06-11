@@ -13,7 +13,8 @@ Vulkan init_vulkan(HINSTANCE hinst, HWND hwnd) {
 	vulkan.swap_chain = create_swap_chain(vulkan.physical_device, vulkan.surface, vulkan.device, IVec2{WIN_WIDTH, WIN_HEIGHT}, vulkan.swap_chain_images, vulkan.swap_chain_format, vulkan.swap_chain_extent);
 	vulkan.swap_chain_image_views = create_swap_chain_image_views(vulkan.swap_chain_images, vulkan.swap_chain_format, vulkan.device);
 	vulkan.render_pass = create_render_pass(vulkan.swap_chain_format, vulkan.device);
-	vulkan.graphics_pipeline = create_graphics_pipeline(vulkan.device, vulkan.swap_chain_extent, vulkan.render_pass, vulkan.pipeline_layout);
+	vulkan.descriptor_set_layout = create_descriptor_set_layout(vulkan.device);
+	vulkan.graphics_pipeline = create_graphics_pipeline(vulkan.device, vulkan.swap_chain_extent, vulkan.render_pass, vulkan.pipeline_layout, vulkan.descriptor_set_layout);
 	vulkan.swap_chain_framebuffers = create_framebuffers(vulkan.swap_chain_image_views, vulkan.render_pass, vulkan.swap_chain_extent, vulkan.device);
 	vulkan.command_pool = create_command_pool(vulkan.physical_device, vulkan.surface, vulkan.device);
 	vulkan.vertex_buffer = create_vertex_buffer(vulkan.device, vulkan.physical_device, vulkan.vertex_buffer_memory, vulkan.command_pool, vulkan.graphics_queue);
@@ -366,7 +367,28 @@ VkRenderPass create_render_pass(VkFormat swap_chain_image_format, VkDevice devic
 	return render_pass;
 }
 
-VkPipeline create_graphics_pipeline(VkDevice device, VkExtent2D swap_chain_extent, VkRenderPass render_pass, VkPipelineLayout& out_layout) {
+VkDescriptorSetLayout create_descriptor_set_layout(VkDevice device) {
+	VkDescriptorSetLayoutBinding ubo_layout_binding{};
+	ubo_layout_binding.binding = 0;
+	ubo_layout_binding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	ubo_layout_binding.descriptorCount = 1;
+	ubo_layout_binding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+	ubo_layout_binding.pImmutableSamplers = nullptr; // only relevant for image sampling related descriptors
+
+	VkDescriptorSetLayoutCreateInfo layout_info{};
+	layout_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+	layout_info.bindingCount = 1;
+	layout_info.pBindings = &ubo_layout_binding;
+
+	VkDescriptorSetLayout descriptor_set_layout;
+	if (vkCreateDescriptorSetLayout(device, &layout_info, nullptr, &descriptor_set_layout) != VK_SUCCESS) {
+		throw std::runtime_error("Failed to create descriptor set layout!");
+	}
+
+	return descriptor_set_layout;
+}
+
+VkPipeline create_graphics_pipeline(VkDevice device, VkExtent2D swap_chain_extent, VkRenderPass render_pass, VkPipelineLayout& out_layout, VkDescriptorSetLayout descriptor_set_layout) {
 	std::vector<char> vert_shader_code = read_file("vert.spv");
 	std::vector<char> frag_shader_code = read_file("frag.spv");
 
@@ -473,7 +495,7 @@ VkPipeline create_graphics_pipeline(VkDevice device, VkExtent2D swap_chain_exten
 	VkPipelineLayoutCreateInfo pipeline_layout_info{};
 	pipeline_layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 	pipeline_layout_info.setLayoutCount = 0;
-	pipeline_layout_info.pSetLayouts = nullptr;
+	pipeline_layout_info.pSetLayouts = &descriptor_set_layout;
 	pipeline_layout_info.pushConstantRangeCount = 0;
 	pipeline_layout_info.pPushConstantRanges = nullptr;
 
@@ -610,6 +632,21 @@ VkBuffer create_index_buffer(VkDevice device, VkPhysicalDevice physical_device, 
 	vkFreeMemory(device, staging_buffer_memory, nullptr);
 
 	return index_buffer;
+}
+
+void create_uniform_buffers(std::vector<VkBuffer>& out_uniform_buffers, std::vector<VkDeviceMemory>& out_uniform_buffers_memory, 
+std::vector<void*>& out_uniform_buffers_mapped) {
+	VkDeviceSize buffer_size = sizeof(UniformBufferObject);
+
+	out_uniform_buffers.resize(MAX_FRAMES_IN_FLIGHT);
+	out_uniform_buffers_memory.resize(MAX_FRAMES_IN_FLIGHT);
+	out_uniform_buffers_mapped.resize(MAX_FRAMES_IN_FLIGHT);
+
+	for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+		create_vulkan_buffer(buffer_size, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+			out_uniform_buffers[i], out_uniform_buffers_memory[i]);
+		vk_map_memory
+	}
 }
 
 std::vector<VkCommandBuffer> create_command_buffers(VkCommandPool command_pool, VkDevice device) {
@@ -1012,6 +1049,8 @@ void cleanup_swap_chain(VkDevice device, std::vector<VkFramebuffer>& framebuffer
 
 void cleanup_vulkan(Vulkan& vulkan) {
 	cleanup_swap_chain(vulkan.device, vulkan.swap_chain_framebuffers, vulkan.swap_chain_image_views, vulkan.swap_chain); // TODO: swap chain stuff in its own struct to reflect the recreation dependency?
+
+	vkDestroyDescriptorSetLayout(vulkan.device, vulkan.descriptor_set_layout, nullptr);
 
 	vkDestroyBuffer(vulkan.device, vulkan.vertex_buffer, nullptr);
 	vkFreeMemory(vulkan.device, vulkan.vertex_buffer_memory, nullptr);

@@ -61,6 +61,12 @@ const std::vector<uint16_t> indices = {
 	0, 1, 2, 2, 3, 0
 };
 
+struct UniformBufferObject {
+	glm::mat4 model;
+	glm::mat4 view;
+	glm::mat4 proj;
+};
+
 struct QueueFamilyIndices {
 	std::optional<uint32_t> graphics_family;
 	std::optional<uint32_t> present_family;
@@ -97,6 +103,12 @@ struct Vulkan {
 	std::vector<VkImageView> swap_chain_image_views;
 	VkPipeline graphics_pipeline;
 	VkRenderPass render_pass;
+	VkDescriptorSetLayout descriptor_set_layout;
+	VkBuffer index_buffer;
+	VkDeviceMemory index_buffer_memory;
+	std::vector<VkBuffer> uniform_buffers;
+	std::vector<VkDeviceMemory> uniform_buffers_memory;
+	std::vector<void*> uniform_buffers_mapped;
 	VkPipelineLayout pipeline_layout;
 	std::vector<VkFramebuffer> swap_chain_framebuffers;
 	VkCommandPool command_pool;
@@ -124,7 +136,8 @@ VkSwapchainKHR create_swap_chain(VkPhysicalDevice physical_device, VkSurfaceKHR 
 	std::vector<VkImage>& out_images, VkFormat& out_format, VkExtent2D& out_extent);
 std::vector<VkImageView> create_swap_chain_image_views(std::vector<VkImage>& images, VkFormat format, VkDevice device);
 VkRenderPass create_render_pass(VkFormat swap_chain_image_format, VkDevice device);
-VkPipeline create_graphics_pipeline(VkDevice device, VkExtent2D swap_chain_extent, VkRenderPass render_pass, VkPipelineLayout& out_layout);
+VkDescriptorSetLayout create_descriptor_set_layout(VkDevice device);
+VkPipeline create_graphics_pipeline(VkDevice device, VkExtent2D swap_chain_extent, VkRenderPass render_pass, VkPipelineLayout& out_layout, VkDescriptorSetLayout descriptor_set_layout);
 VkShaderModule create_shader_module(const std::vector<char>& code, VkDevice device);
 std::vector<VkFramebuffer> create_framebuffers(std::vector<VkImageView>& swap_chain_image_views, VkRenderPass render_pass, VkExtent2D swap_chain_extent, VkDevice device);
 VkCommandPool create_command_pool(VkPhysicalDevice physical_device, VkSurfaceKHR surface, VkDevice device);
