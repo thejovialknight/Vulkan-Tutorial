@@ -19,9 +19,12 @@
 #include <set>
 #include <optional>
 #include <array>
+#include <chrono>
 
 #include <vulkan/vulkan.h>
+#define GLM_FORCE_RADIANS
 #include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 
 #include "window_size.h"
 #include "file_helpers.h"
@@ -114,8 +117,6 @@ struct Vulkan {
 	VkCommandPool command_pool;
 	VkBuffer vertex_buffer;
 	VkDeviceMemory vertex_buffer_memory;
-	VkBuffer index_buffer;
-	VkDeviceMemory index_buffer_memory;
 	std::vector<VkCommandBuffer> command_buffers;
 	
 	std::vector<VkSemaphore> image_available_semaphores;
@@ -149,6 +150,7 @@ void create_sync_objects(VkDevice device, std::vector<VkSemaphore>& image_availa
 void record_command_buffer(VkCommandBuffer command_buffer, uint32_t image_index, VkRenderPass render_pass,
 	std::vector<VkFramebuffer>& swap_chain_framebuffers, VkExtent2D swap_chain_extent, VkPipeline graphics_pipeline, VkBuffer vertex_buffer, VkBuffer index_buffer);
 DrawFrameResult draw_frame(Vulkan& vulkan, HWND hwnd);
+void update_uniform_buffer(uint32_t current_image, VkExtent2D swap_chain_extent, std::vector<void*>& uniform_buffers_mapped);
 RecreateSwapChainResult recreate_swap_chain(Vulkan& vulkan, HWND hwnd);
 
 QueueFamilyIndices get_queue_families(const VkPhysicalDevice device, VkSurfaceKHR surface);

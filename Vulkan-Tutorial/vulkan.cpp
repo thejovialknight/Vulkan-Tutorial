@@ -494,7 +494,7 @@ VkPipeline create_graphics_pipeline(VkDevice device, VkExtent2D swap_chain_exten
 	// Not being used right now
 	VkPipelineLayoutCreateInfo pipeline_layout_info{};
 	pipeline_layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-	pipeline_layout_info.setLayoutCount = 0;
+	pipeline_layout_info.setLayoutCount = 1;
 	pipeline_layout_info.pSetLayouts = &descriptor_set_layout;
 	pipeline_layout_info.pushConstantRangeCount = 0;
 	pipeline_layout_info.pPushConstantRanges = nullptr;
@@ -634,7 +634,7 @@ VkBuffer create_index_buffer(VkDevice device, VkPhysicalDevice physical_device, 
 	return index_buffer;
 }
 
-void create_uniform_buffers(std::vector<VkBuffer>& out_uniform_buffers, std::vector<VkDeviceMemory>& out_uniform_buffers_memory, 
+void create_uniform_buffers(VkDevice device, VkPhysicalDevice physical_device, std::vector<VkBuffer>& out_uniform_buffers, std::vector<VkDeviceMemory>& out_uniform_buffers_memory, 
 std::vector<void*>& out_uniform_buffers_mapped) {
 	VkDeviceSize buffer_size = sizeof(UniformBufferObject);
 
@@ -643,9 +643,9 @@ std::vector<void*>& out_uniform_buffers_mapped) {
 	out_uniform_buffers_mapped.resize(MAX_FRAMES_IN_FLIGHT);
 
 	for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-		create_vulkan_buffer(buffer_size, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-			out_uniform_buffers[i], out_uniform_buffers_memory[i]);
-		vk_map_memory
+		out_uniform_buffers[i] = create_vulkan_buffer(device, physical_device, buffer_size, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+			out_uniform_buffers_memory[i]);
+		vkMapMemory(device, out_uniform_buffers_memory[i], 0, buffer_size, 0, &out_uniform_buffers_mapped[i]);
 	}
 }
 
@@ -758,6 +758,8 @@ DrawFrameResult draw_frame(Vulkan& vulkan, HWND hwnd) {
 	record_command_buffer(vulkan.command_buffers[vulkan.current_frame], image_index, vulkan.render_pass, vulkan.swap_chain_framebuffers,
 		vulkan.swap_chain_extent, vulkan.graphics_pipeline, vulkan.vertex_buffer, vulkan.index_buffer);
 
+	update_uniform_buffer(vulkan.current_frame, vulkan.swap_chain_extent, vulkan.uniform_buffers_mapped);
+
 	VkSubmitInfo submit_info{};
 	submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
@@ -798,6 +800,20 @@ DrawFrameResult draw_frame(Vulkan& vulkan, HWND hwnd) {
 	}
 
 	return DRAW_FRAME_SUCCESS;
+}
+
+void update_uniform_buffer(uint32_t current_image, VkExtent2D swap_chain_extent, std::vector<void*>& uniform_buffers_mapped) {
+	static std::chrono::steady_clock::time_point start_time = std::chrono::high_resolution_clock::now();
+
+	std::chrono::steady_clock::time_point current_time = std::chrono::high_resolution_clock::now();
+	float time = std::chrono::duration<float, std::chrono::seconds::period>(current_time - start_time).count();
+
+	UniformBufferObject ubo{};
+	ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+	ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+	ubo.proj = glm::perspective(glm::radians(45.0f), swap_chain_extent.width / (float)swap_chain_extent.height, 0.1f, 10.0f);
+	ubo.proj[1][1] *= -1;
+	memcpy(uniform_buffers_mapped[current_image], &ubo, sizeof(ubo));
 }
 
 RecreateSwapChainResult recreate_swap_chain(Vulkan& vulkan, HWND hwnd) {
@@ -1050,8 +1066,6 @@ void cleanup_swap_chain(VkDevice device, std::vector<VkFramebuffer>& framebuffer
 void cleanup_vulkan(Vulkan& vulkan) {
 	cleanup_swap_chain(vulkan.device, vulkan.swap_chain_framebuffers, vulkan.swap_chain_image_views, vulkan.swap_chain); // TODO: swap chain stuff in its own struct to reflect the recreation dependency?
 
-	vkDestroyDescriptorSetLayout(vulkan.device, vulkan.descriptor_set_layout, nullptr);
-
 	vkDestroyBuffer(vulkan.device, vulkan.vertex_buffer, nullptr);
 	vkFreeMemory(vulkan.device, vulkan.vertex_buffer_memory, nullptr);
 
@@ -1063,10 +1077,13 @@ void cleanup_vulkan(Vulkan& vulkan) {
 	vkDestroyRenderPass(vulkan.device, vulkan.render_pass, nullptr);
 
 	for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+		vkDestroyBuffer(vulkan.device, vulkan.uniform_buffers[i], nullptr);
+		vkFreeMemory(vulkan.device, vulkan.uniform_buffers_memory[i], nullptr);
 		vkDestroySemaphore(vulkan.device, vulkan.image_available_semaphores[i], nullptr);
 		vkDestroySemaphore(vulkan.device, vulkan.render_finished_semaphores[i], nullptr);
 		vkDestroyFence(vulkan.device, vulkan.in_flight_fences[i], nullptr);
 	}
+	vkDestroyDescriptorSetLayout(vulkan.device, vulkan.descriptor_set_layout, nullptr);
 
 	vkDestroyCommandPool(vulkan.device, vulkan.command_pool, nullptr);
 	vkDestroyDevice(vulkan.device, nullptr);
