@@ -14,6 +14,9 @@ Vulkan init_vulkan(HINSTANCE hinst, HWND hwnd) {
 	vulkan.swap_chain_image_views = create_swap_chain_image_views(vulkan.swap_chain_images, vulkan.swap_chain_format, vulkan.device);
 	vulkan.render_pass = create_render_pass(vulkan.swap_chain_format, vulkan.device);
 	vulkan.descriptor_set_layout = create_descriptor_set_layout(vulkan.device);
+	create_uniform_buffers(vulkan.device, vulkan.physical_device, vulkan.uniform_buffers, vulkan.uniform_buffers_memory, vulkan.uniform_buffers_mapped);
+	vulkan.descriptor_pool = create_descriptor_pool(vulkan.device);
+	vulkan.descriptor_sets = create_descriptor_sets(vulkan.descriptor_set_layout, vulkan.descriptor_pool, vulkan.device, vulkan.uniform_buffers);
 	vulkan.graphics_pipeline = create_graphics_pipeline(vulkan.device, vulkan.swap_chain_extent, vulkan.render_pass, vulkan.pipeline_layout, vulkan.descriptor_set_layout);
 	vulkan.swap_chain_framebuffers = create_framebuffers(vulkan.swap_chain_image_views, vulkan.render_pass, vulkan.swap_chain_extent, vulkan.device);
 	vulkan.command_pool = create_command_pool(vulkan.physical_device, vulkan.surface, vulkan.device);
@@ -439,7 +442,7 @@ VkPipeline create_graphics_pipeline(VkDevice device, VkExtent2D swap_chain_exten
 	rasterizer_info.polygonMode = VK_POLYGON_MODE_FILL;
 	rasterizer_info.lineWidth = 1.0f;
 	rasterizer_info.cullMode = VK_CULL_MODE_BACK_BIT;
-	rasterizer_info.frontFace = VK_FRONT_FACE_CLOCKWISE;
+	rasterizer_info.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
 	// All these depth bias things are irrelevant and optional when depth bias is disabled as we have done here
 	rasterizer_info.depthBiasEnable = VK_FALSE;
 	//rasterizer_info.depthBiasConstantFactor = 0.0f;
@@ -649,6 +652,64 @@ std::vector<void*>& out_uniform_buffers_mapped) {
 	}
 }
 
+VkDescriptorPool create_descriptor_pool(VkDevice device) {
+	VkDescriptorPoolSize pool_size{};
+	pool_size.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	pool_size.descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+	
+	VkDescriptorPoolCreateInfo pool_info{};
+	pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+	pool_info.poolSizeCount = 1;
+	pool_info.pPoolSizes = &pool_size;
+	pool_info.maxSets = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+
+	VkDescriptorPool descriptor_pool;
+	if (vkCreateDescriptorPool(device, &pool_info, nullptr, &descriptor_pool) != VK_SUCCESS) {
+		throw std::runtime_error("Failed to create descriptor pool!");
+	}
+
+	return descriptor_pool;
+}
+
+std::vector<VkDescriptorSet> create_descriptor_sets(VkDescriptorSetLayout descriptor_set_layout, VkDescriptorPool descriptor_pool, 
+VkDevice device, std::vector<VkBuffer>& uniform_buffers) {
+	std::vector<VkDescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, descriptor_set_layout);
+
+	VkDescriptorSetAllocateInfo alloc_info{};
+	alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+	alloc_info.descriptorPool = descriptor_pool;
+	alloc_info.descriptorSetCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+	alloc_info.pSetLayouts = layouts.data();
+
+	std::vector<VkDescriptorSet> descriptor_sets;
+	descriptor_sets.resize(MAX_FRAMES_IN_FLIGHT);
+	if (vkAllocateDescriptorSets(device, &alloc_info, descriptor_sets.data()) != VK_SUCCESS) {
+		throw std::runtime_error("Failed to allocate descriptor sets!");
+	}
+
+	for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+		VkDescriptorBufferInfo buffer_info{};
+		buffer_info.buffer = uniform_buffers[i];
+		buffer_info.offset = 0;
+		buffer_info.range = sizeof(UniformBufferObject);
+
+		VkWriteDescriptorSet descriptor_write{};
+		descriptor_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		descriptor_write.dstSet = descriptor_sets[i];
+		descriptor_write.dstBinding = 0;
+		descriptor_write.dstArrayElement = 0;
+		descriptor_write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+		descriptor_write.descriptorCount = 1;
+		descriptor_write.pBufferInfo = &buffer_info;
+		descriptor_write.pImageInfo = nullptr; // used for descriptors that refer to image data
+		descriptor_write.pTexelBufferView = nullptr; // used for descriptors that refer to buffer views
+
+		vkUpdateDescriptorSets(device, 1, &descriptor_write, 0, nullptr);
+	}
+
+	return descriptor_sets;
+}
+
 std::vector<VkCommandBuffer> create_command_buffers(VkCommandPool command_pool, VkDevice device) {
 	std::vector<VkCommandBuffer> command_buffers;
 	command_buffers.resize(MAX_FRAMES_IN_FLIGHT);
@@ -687,8 +748,9 @@ void create_sync_objects(VkDevice device, std::vector<VkSemaphore>& image_availa
 	}
 }
 
-void record_command_buffer(VkCommandBuffer command_buffer, uint32_t image_index, VkRenderPass render_pass, 
-std::vector<VkFramebuffer>& swap_chain_framebuffers, VkExtent2D swap_chain_extent, VkPipeline graphics_pipeline, VkBuffer vertex_buffer, VkBuffer index_buffer) {
+void record_command_buffer(VkCommandBuffer command_buffer, uint32_t image_index, VkRenderPass render_pass,
+std::vector<VkFramebuffer>& swap_chain_framebuffers, VkExtent2D swap_chain_extent, VkPipeline graphics_pipeline,
+VkBuffer vertex_buffer, VkBuffer index_buffer, VkPipelineLayout pipeline_layout, std::vector<VkDescriptorSet>& descriptor_sets, uint32_t current_frame) {
 	VkCommandBufferBeginInfo begin_info{};
 	begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 	begin_info.flags = 0;
@@ -730,6 +792,8 @@ std::vector<VkFramebuffer>& swap_chain_framebuffers, VkExtent2D swap_chain_exten
 	scissor.extent = swap_chain_extent;
 	vkCmdSetScissor(command_buffer, 0, 1, &scissor);
 
+	vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, 0, 1, 
+		&descriptor_sets[current_frame], 0, nullptr);
 	vkCmdDrawIndexed(command_buffer, static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
 
 	vkCmdEndRenderPass(command_buffer);
@@ -756,7 +820,7 @@ DrawFrameResult draw_frame(Vulkan& vulkan, HWND hwnd) {
 
 	vkResetCommandBuffer(vulkan.command_buffers[vulkan.current_frame], 0);
 	record_command_buffer(vulkan.command_buffers[vulkan.current_frame], image_index, vulkan.render_pass, vulkan.swap_chain_framebuffers,
-		vulkan.swap_chain_extent, vulkan.graphics_pipeline, vulkan.vertex_buffer, vulkan.index_buffer);
+		vulkan.swap_chain_extent, vulkan.graphics_pipeline, vulkan.vertex_buffer, vulkan.index_buffer, vulkan.pipeline_layout, vulkan.descriptor_sets, vulkan.current_frame);
 
 	update_uniform_buffer(vulkan.current_frame, vulkan.swap_chain_extent, vulkan.uniform_buffers_mapped);
 
@@ -1083,6 +1147,7 @@ void cleanup_vulkan(Vulkan& vulkan) {
 		vkDestroySemaphore(vulkan.device, vulkan.render_finished_semaphores[i], nullptr);
 		vkDestroyFence(vulkan.device, vulkan.in_flight_fences[i], nullptr);
 	}
+	vkDestroyDescriptorPool(vulkan.device, vulkan.descriptor_pool, nullptr);
 	vkDestroyDescriptorSetLayout(vulkan.device, vulkan.descriptor_set_layout, nullptr);
 
 	vkDestroyCommandPool(vulkan.device, vulkan.command_pool, nullptr);

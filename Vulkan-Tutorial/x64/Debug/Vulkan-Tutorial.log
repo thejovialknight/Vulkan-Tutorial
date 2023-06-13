@@ -1,7 +1,4 @@
-﻿  application.cpp
-  main.cpp
-  vulkan.cpp
-  Generating Code...
+﻿  vulkan.cpp
 LINK : warning LNK4075: ignoring '/INCREMENTAL' due to '/PROFILE' specification
 application.obj : warning LNK4075: ignoring '/EDITANDCONTINUE' due to '/OPT:REF' specification
-  Vulkan-Tutorial.vcxproj -> C:\Users\thejo\source\repos\Vulkan-Tutorial\x64\Debug\Vulkan-Tutorial.exe
+  Vulkan-Tutorial.vcxproj -> C:\Users\thejo\Documents\GitHub\Vulkan-Tutorial\x64\Debug\Vulkan-Tutorial.exe

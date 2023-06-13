@@ -118,6 +118,8 @@ struct Vulkan {
 	VkBuffer vertex_buffer;
 	VkDeviceMemory vertex_buffer_memory;
 	std::vector<VkCommandBuffer> command_buffers;
+	VkDescriptorPool descriptor_pool;
+	std::vector<VkDescriptorSet> descriptor_sets;
 	
 	std::vector<VkSemaphore> image_available_semaphores;
 	std::vector<VkSemaphore> render_finished_semaphores;
@@ -144,11 +146,17 @@ std::vector<VkFramebuffer> create_framebuffers(std::vector<VkImageView>& swap_ch
 VkCommandPool create_command_pool(VkPhysicalDevice physical_device, VkSurfaceKHR surface, VkDevice device);
 VkBuffer create_vertex_buffer(VkDevice device, VkPhysicalDevice physical_device, VkDeviceMemory& out_buffer_memory, VkCommandPool command_pool, VkQueue graphics_queue);
 VkBuffer create_index_buffer(VkDevice device, VkPhysicalDevice physical_device, VkCommandPool command_pool, VkQueue graphics_queue, VkDeviceMemory& out_buffer_memory);
+void create_uniform_buffers(VkDevice device, VkPhysicalDevice physical_device, std::vector<VkBuffer>& out_uniform_buffers, std::vector<VkDeviceMemory>& out_uniform_buffers_memory,
+	std::vector<void*>& out_uniform_buffers_mapped);
+VkDescriptorPool create_descriptor_pool(VkDevice device);
+std::vector<VkDescriptorSet> create_descriptor_sets(VkDescriptorSetLayout descriptor_set_layout, VkDescriptorPool descriptor_pool,
+	VkDevice device, std::vector<VkBuffer>& uniform_buffers);
 std::vector<VkCommandBuffer> create_command_buffers(VkCommandPool command_pool, VkDevice device);
 void create_sync_objects(VkDevice device, std::vector<VkSemaphore>& image_available_semaphores, std::vector<VkSemaphore>& render_finished_semaphores, std::vector<VkFence>& in_flight_fences);
 
 void record_command_buffer(VkCommandBuffer command_buffer, uint32_t image_index, VkRenderPass render_pass,
-	std::vector<VkFramebuffer>& swap_chain_framebuffers, VkExtent2D swap_chain_extent, VkPipeline graphics_pipeline, VkBuffer vertex_buffer, VkBuffer index_buffer);
+	std::vector<VkFramebuffer>& swap_chain_framebuffers, VkExtent2D swap_chain_extent, VkPipeline graphics_pipeline,
+	VkBuffer vertex_buffer, VkBuffer index_buffer, VkPipelineLayout pipeline_layout, std::vector<VkDescriptorSet>& descriptor_sets, uint32_t current_frame);
 DrawFrameResult draw_frame(Vulkan& vulkan, HWND hwnd);
 void update_uniform_buffer(uint32_t current_image, VkExtent2D swap_chain_extent, std::vector<void*>& uniform_buffers_mapped);
 RecreateSwapChainResult recreate_swap_chain(Vulkan& vulkan, HWND hwnd);

@@ -6,8 +6,6 @@
 #define OS WINDOWS
 
 int WINAPI WinMain(HINSTANCE hinst, HINSTANCE hprevinst, LPSTR lpcmdline, int ncmdshow) {
-	std::cout << "Hello World!" << std::endl;
-
 #pragma region Win32
 
 	WNDCLASSEX window_class; // information for window class
