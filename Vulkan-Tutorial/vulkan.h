@@ -3,6 +3,9 @@
 // use offsets in commands like vkCmdBindVertexBuffers. MORE CACHE FRIENDLY!
 // Some vulkan functions have explicit flags to specify we want to do this.
 
+// TODO: Command submission should optimally be put into a single command buffer and then executed
+// asynchronously. ("Images" vulkan tutorial)
+
 #pragma once
 #define VK_USE_PLATFORM_WIN32_KHR
 #define NOMINMAX
@@ -50,14 +53,15 @@ const int MAX_FRAMES_IN_FLIGHT = 2;
 struct Vertex {
 	glm::vec2 position;
 	glm::vec3 color;
+	glm::vec2 texture_coordinates;
 };
 
 // This is what will be passed by outside, presumptively
 const std::vector<Vertex> vertices = {
-	{{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
-	{{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
-	{{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
-	{{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}}
+	{{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
+	{{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
+	{{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
+	{{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}}
 };
 
 const std::vector<uint16_t> indices = {
@@ -120,6 +124,10 @@ struct Vulkan {
 	std::vector<VkCommandBuffer> command_buffers;
 	VkDescriptorPool descriptor_pool;
 	std::vector<VkDescriptorSet> descriptor_sets;
+	VkImage texture_image;
+	VkDeviceMemory texture_image_memory;
+	VkImageView texture_image_view;
+	VkSampler texture_sampler;
 	
 	std::vector<VkSemaphore> image_available_semaphores;
 	std::vector<VkSemaphore> render_finished_semaphores;
@@ -150,8 +158,12 @@ void create_uniform_buffers(VkDevice device, VkPhysicalDevice physical_device, s
 	std::vector<void*>& out_uniform_buffers_mapped);
 VkDescriptorPool create_descriptor_pool(VkDevice device);
 std::vector<VkDescriptorSet> create_descriptor_sets(VkDescriptorSetLayout descriptor_set_layout, VkDescriptorPool descriptor_pool,
-	VkDevice device, std::vector<VkBuffer>& uniform_buffers);
+	VkDevice device, std::vector<VkBuffer>& uniform_buffers, VkImageView texture_image_view, VkSampler texture_sampler);
 std::vector<VkCommandBuffer> create_command_buffers(VkCommandPool command_pool, VkDevice device);
+void create_texture_image(VkDevice device, VkPhysicalDevice physical_device, VkImage& out_image,
+	VkDeviceMemory& out_image_memory, VkCommandPool command_pool, VkQueue graphics_queue);
+VkImageView create_texture_image_view(VkDevice device, VkImage texture_image);
+VkSampler create_texture_sampler(VkDevice device, VkPhysicalDevice physical_device);
 void create_sync_objects(VkDevice device, std::vector<VkSemaphore>& image_available_semaphores, std::vector<VkSemaphore>& render_finished_semaphores, std::vector<VkFence>& in_flight_fences);
 
 void record_command_buffer(VkCommandBuffer command_buffer, uint32_t image_index, VkRenderPass render_pass,
@@ -166,10 +178,18 @@ bool queue_families_validated(QueueFamilyIndices indices);
 SwapChainSupportInfo get_swap_chain_support(VkPhysicalDevice device, VkSurfaceKHR surface);
 int rate_device_suitability(VkPhysicalDevice device, VkSurfaceKHR surface);
 static VkVertexInputBindingDescription get_vertex_binding_description();
-static std::array<VkVertexInputAttributeDescription, 2> get_vertex_attribute_descriptions();
+static std::array<VkVertexInputAttributeDescription, 3> get_vertex_attribute_descriptions();
 uint32_t get_memory_type(uint32_t type_filter, VkMemoryPropertyFlags properties, VkPhysicalDevice physical_device);
 VkBuffer create_vulkan_buffer(VkDevice device, VkPhysicalDevice physical_device, VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkDeviceMemory& out_buffer_memory);
 void copy_vulkan_buffer(VkBuffer src, VkBuffer dst, VkDeviceSize size, VkDevice device, VkCommandPool command_pool, VkQueue graphics_queue);
+void create_vulkan_image(uint32_t width, uint32_t height, VkDevice device, VkPhysicalDevice physical_device, VkFormat format, VkImageTiling tiling,
+	VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImage& out_image, VkDeviceMemory& out_image_memory);
+void transition_image_layout(VkImage image, VkFormat format, VkImageLayout old_layout, VkImageLayout new_layout,
+	VkCommandPool command_pool, VkDevice device, VkQueue graphics_queue);
+void copy_buffer_to_image(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height,
+	VkCommandPool command_pool, VkDevice device, VkQueue graphics_queue);
+VkCommandBuffer begin_single_time_commands(VkCommandPool command_pool, VkDevice device);
+void end_single_time_commands(VkCommandBuffer command_buffer, VkQueue graphics_queue, VkDevice device, VkCommandPool command_pool);
 
 void cleanup_swap_chain(VkDevice device, std::vector<VkFramebuffer>& framebuffers, std::vector<VkImageView>& image_views, VkSwapchainKHR swap_chain);
 void cleanup_vulkan(Vulkan& vulkan);
