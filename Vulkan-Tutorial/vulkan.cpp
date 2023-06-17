@@ -304,6 +304,7 @@ std::vector<VkImage>& out_images, VkFormat& out_format, VkExtent2D& out_extent) 
 }
 
 std::vector<VkImageView> create_swap_chain_image_views(std::vector<VkImage>& images, VkFormat format, VkDevice device) {
+	// TODO: This should use create_vulkan_image_view
 	std::vector<VkImageView> image_views;
 	image_views.resize(images.size());
 	for (size_t i = 0; i < images.size(); ++i) {
@@ -759,6 +760,22 @@ std::vector<VkCommandBuffer> create_command_buffers(VkCommandPool command_pool, 
 	return command_buffers;
 }
 
+// WORK
+void create_depth_resource(VkDevice device, VkPhysicalDevice physical_device) {
+	// This was a helper function in the tutorial that would have been called find_depth_format, but I'm not sure why we would do such a FUCKHEAD thing
+	VkFormat depth_format = find_supported_format(
+		{VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT},
+        VK_IMAGE_TILING_OPTIMAL,
+        VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT,
+		physical_device
+	);
+	// This was a helper function that would have been called has_stencil_component, but I inlined it for the same reason (FUCKHEAD energies).
+	bool format_has_stencil_component = (format == VK_FORMAT_D32_SFLOAT_S8_UINT || format == VK_FORMAT_D24_UNORM_S8_UINT);
+
+	create_vulkan_image(swap_chain_extent.width, swap_chain_extent.height, device, physical_device, depth_format, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, out_depth_image, out_depth_image_memory);
+	out_depth_image_view = create_image_view(out_depth_image, depth_format, VK_IMAGE_ASPECT_DEPTH_BIT, device);
+}
+
 void create_texture_image(VkDevice device, VkPhysicalDevice physical_device, VkImage& out_image, 
 VkDeviceMemory& out_image_memory, VkCommandPool command_pool, VkQueue graphics_queue) {
 	int tex_width;
@@ -799,23 +816,7 @@ VkDeviceMemory& out_image_memory, VkCommandPool command_pool, VkQueue graphics_q
 
 // TODO: refactor image view creation also found increate_swap_chain_image_views into create_image_view function
 VkImageView create_texture_image_view(VkDevice device, VkImage texture_image) {
-	VkImageViewCreateInfo view_info{};
-	view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-	view_info.image = texture_image;
-	view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
-	view_info.format = VK_FORMAT_R8G8B8A8_SRGB;
-	view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-	view_info.subresourceRange.baseMipLevel = 0;
-	view_info.subresourceRange.levelCount = 1;
-	view_info.subresourceRange.baseArrayLayer = 0;
-	view_info.subresourceRange.layerCount = 1;
-
-	VkImageView texture_image_view;
-	if(vkCreateImageView(device, &view_info, nullptr, &texture_image_view) != VK_SUCCESS) {
-		throw std::runtime_error("Failed to create texture image view!");
-	}
-
-	return texture_image_view;
+	return create_vulkan_image_view(texture_image, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT, device);
 }
 
 VkSampler create_texture_sampler(VkDevice device, VkPhysicalDevice physical_device) {
@@ -1137,6 +1138,22 @@ int rate_device_suitability(VkPhysicalDevice device, VkSurfaceKHR surface) {
 	return score;
 } 
 
+VkFormat find_supported_format(const std::vector<VkFormat>& candidates, VkImageTiling tiling, VkFormatFeatureFlags features, VkPhysicalDevice physical_device) {
+	for(VkFormat format : candidates) {
+		VkFormatProperties properties;
+		vkGetPhysicalDeviceFormatProperties(physical_device, format, &properties);
+
+		if(tiling == VK_IMAGE_TILING_LINEAR && (properties.linearTilingFeatures & features) == features) {
+			return format;
+		}
+		else if(tiling == VK_IMAGE_TILING_OPTIMAL && (properties.optimalTilingFeatures & features) == features) {
+			return format;
+		}
+	}
+
+	throw std::runtime_error("Failed to find supported format!");
+}
+
 static VkVertexInputBindingDescription get_vertex_binding_description() {
 	VkVertexInputBindingDescription binding_description{};
 	binding_description.binding = 0; // associated with binding in attribute descriptions?
@@ -1151,7 +1168,7 @@ static std::array<VkVertexInputAttributeDescription, 3> get_vertex_attribute_des
 	
 	attribute_descriptions[0].binding = 0;
 	attribute_descriptions[0].location = 0; // location 0 in shader
-	attribute_descriptions[0].format = VK_FORMAT_R32G32_SFLOAT; // vecs and colors are annotated the same. R32G32 is a vec2 (2x32 bit)
+	attribute_descriptions[0].format = VK_FORMAT_R32G32B32_SFLOAT; // vecs and colors are annotated the same. R32G32 is a vec2 (2x32 bit)
 	attribute_descriptions[0].offset = offsetof(Vertex, position); // the offset into the vertex data structure for the attribute data
 
 	attribute_descriptions[1].binding = 0;
@@ -1249,6 +1266,26 @@ VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImage& out_image, V
 	}
 
 	vkBindImageMemory(device, out_image, out_image_memory, 0);
+}
+
+VkImageView create_vulkan_image_view(VkImage image, VkFormat format, VkImageAspectFlags aspect_flags, VkDevice device) {
+	VkImageViewCreateInfo view_info{};
+	view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+	view_info.image = texture_image;
+	view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+	view_info.format = VK_FORMAT_R8G8B8A8_SRGB;
+	view_info.subresourceRange.aspectMask = aspect_flags;
+	view_info.subresourceRange.baseMipLevel = 0;
+	view_info.subresourceRange.levelCount = 1;
+	view_info.subresourceRange.baseArrayLayer = 0;
+	view_info.subresourceRange.layerCount = 1;
+
+	VkImageView image_view;
+	if(vkCreateImageView(device, &view_info, nullptr, &image_view) != VK_SUCCESS) {
+		throw std::runtime_error("Failed to create texture image view!");
+	}
+
+	return image_view
 }
 
 void transition_image_layout(VkImage image, VkFormat format, VkImageLayout old_layout, VkImageLayout new_layout,

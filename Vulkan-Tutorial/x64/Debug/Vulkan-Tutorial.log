@@ -1,4 +1,32 @@
-﻿  vulkan.cpp
-LINK : warning LNK4075: ignoring '/INCREMENTAL' due to '/PROFILE' specification
-application.obj : warning LNK4075: ignoring '/EDITANDCONTINUE' due to '/OPT:REF' specification
-  Vulkan-Tutorial.vcxproj -> C:\Users\thejo\Documents\GitHub\Vulkan-Tutorial\x64\Debug\Vulkan-Tutorial.exe
+﻿  application.cpp
+C:\Users\thejo\Documents\GitHub\Vulkan-Tutorial\Vulkan-Tutorial\vulkan.h(194,40): error C2267: 'get_vertex_binding_description': static functions with block scope are illegal
+C:\Users\thejo\Documents\GitHub\Vulkan-Tutorial\Vulkan-Tutorial\vulkan.h(195,57): error C2267: 'get_vertex_attribute_descriptions': static functions with block scope are illegal
+C:\Users\thejo\Documents\GitHub\Vulkan-Tutorial\Vulkan-Tutorial\application.cpp(3,6): error C2601: 'run_application': local function definitions are illegal
+C:\Users\thejo\Documents\GitHub\Vulkan-Tutorial\Vulkan-Tutorial\vulkan.h(174): message : this line contains a '{' which has not yet been matched
+C:\Users\thejo\Documents\GitHub\Vulkan-Tutorial\Vulkan-Tutorial\vulkan.h(174): fatal  error C1075: '{': no matching token found
+  main.cpp
+C:\Users\thejo\Documents\GitHub\Vulkan-Tutorial\Vulkan-Tutorial\vulkan.h(194,40): error C2267: 'get_vertex_binding_description': static functions with block scope are illegal
+C:\Users\thejo\Documents\GitHub\Vulkan-Tutorial\Vulkan-Tutorial\vulkan.h(195,57): error C2267: 'get_vertex_attribute_descriptions': static functions with block scope are illegal
+C:\Users\thejo\Documents\GitHub\Vulkan-Tutorial\Vulkan-Tutorial\main.cpp(8,12): error C2601: 'WinMain': local function definitions are illegal
+C:\Users\thejo\Documents\GitHub\Vulkan-Tutorial\Vulkan-Tutorial\vulkan.h(174): message : this line contains a '{' which has not yet been matched
+C:\Users\thejo\Documents\GitHub\Vulkan-Tutorial\Vulkan-Tutorial\vulkan.h(174): fatal  error C1075: '{': no matching token found
+  vulkan.cpp
+C:\Users\thejo\Documents\GitHub\Vulkan-Tutorial\Vulkan-Tutorial\vulkan.h(194,40): error C2267: 'get_vertex_binding_description': static functions with block scope are illegal
+C:\Users\thejo\Documents\GitHub\Vulkan-Tutorial\Vulkan-Tutorial\vulkan.h(195,57): error C2267: 'get_vertex_attribute_descriptions': static functions with block scope are illegal
+C:\dev\stb\stb_image.h(389,12): error C2598: linkage specification must be at global scope
+C:\Users\thejo\Documents\GitHub\Vulkan-Tutorial\Vulkan-Tutorial\vulkan.cpp(773,39): error C2065: 'format': undeclared identifier
+C:\Users\thejo\Documents\GitHub\Vulkan-Tutorial\Vulkan-Tutorial\vulkan.cpp(773,81): error C2065: 'format': undeclared identifier
+C:\Users\thejo\Documents\GitHub\Vulkan-Tutorial\Vulkan-Tutorial\vulkan.cpp(775,22): error C2065: 'swap_chain_extent': undeclared identifier
+C:\Users\thejo\Documents\GitHub\Vulkan-Tutorial\Vulkan-Tutorial\vulkan.cpp(775,47): error C2065: 'swap_chain_extent': undeclared identifier
+C:\Users\thejo\Documents\GitHub\Vulkan-Tutorial\Vulkan-Tutorial\vulkan.cpp(775,219): error C2065: 'out_depth_image': undeclared identifier
+C:\Users\thejo\Documents\GitHub\Vulkan-Tutorial\Vulkan-Tutorial\vulkan.cpp(775,236): error C2065: 'out_depth_image_memory': undeclared identifier
+C:\Users\thejo\Documents\GitHub\Vulkan-Tutorial\Vulkan-Tutorial\vulkan.cpp(775,2): error C2660: 'create_vulkan_image': function does not take 9 arguments
+C:\Users\thejo\Documents\GitHub\Vulkan-Tutorial\Vulkan-Tutorial\vulkan.h(199,6): message : see declaration of 'create_vulkan_image'
+C:\Users\thejo\Documents\GitHub\Vulkan-Tutorial\Vulkan-Tutorial\vulkan.cpp(775,2): message : while trying to match the argument list '()'
+C:\Users\thejo\Documents\GitHub\Vulkan-Tutorial\Vulkan-Tutorial\vulkan.cpp(776,2): error C2065: 'out_depth_image_view': undeclared identifier
+C:\Users\thejo\Documents\GitHub\Vulkan-Tutorial\Vulkan-Tutorial\vulkan.cpp(776,43): error C2065: 'out_depth_image': undeclared identifier
+C:\Users\thejo\Documents\GitHub\Vulkan-Tutorial\Vulkan-Tutorial\vulkan.cpp(776,25): error C3861: 'create_image_view': identifier not found
+C:\Users\thejo\Documents\GitHub\Vulkan-Tutorial\Vulkan-Tutorial\vulkan.cpp(1274,20): error C2065: 'texture_image': undeclared identifier
+C:\Users\thejo\Documents\GitHub\Vulkan-Tutorial\Vulkan-Tutorial\vulkan.cpp(1289,1): error C2143: syntax error: missing ';' before '}'
+C:\Users\thejo\Documents\GitHub\Vulkan-Tutorial\Vulkan-Tutorial\vulkan.h(174): fatal  error C1075: '{': no matching token found
+  Generating Code...

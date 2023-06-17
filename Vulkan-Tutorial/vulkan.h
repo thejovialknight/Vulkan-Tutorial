@@ -26,6 +26,7 @@
 
 #include <vulkan/vulkan.h>
 #define GLM_FORCE_RADIANS
+#define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
@@ -51,21 +52,27 @@ const int MAX_FRAMES_IN_FLIGHT = 2;
 
 // Possibly belongs in its own platform agnostic file
 struct Vertex {
-	glm::vec2 position;
+	glm::vec3 position;
 	glm::vec3 color;
 	glm::vec2 texture_coordinates;
 };
 
 // This is what will be passed by outside, presumptively
 const std::vector<Vertex> vertices = {
-	{{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
-	{{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
-	{{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
-	{{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}}
+	{{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
+	{{0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
+	{{0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
+	{{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}},
+
+	{{-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
+	{{0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
+	{{0.5f, 0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
+	{{-0.5f, 0.5f, -0.5f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}},
 };
 
 const std::vector<uint16_t> indices = {
-	0, 1, 2, 2, 3, 0
+	0, 1, 2, 2, 3, 0,
+	4, 5, 6, 6, 7, 4
 };
 
 struct UniformBufferObject {
@@ -128,6 +135,9 @@ struct Vulkan {
 	VkDeviceMemory texture_image_memory;
 	VkImageView texture_image_view;
 	VkSampler texture_sampler;
+	VkImage depth_image;
+	VkDeviceMemory depth_image_memory;
+	VkImageView depth_image_view;
 	
 	std::vector<VkSemaphore> image_available_semaphores;
 	std::vector<VkSemaphore> render_finished_semaphores;
@@ -160,6 +170,9 @@ VkDescriptorPool create_descriptor_pool(VkDevice device);
 std::vector<VkDescriptorSet> create_descriptor_sets(VkDescriptorSetLayout descriptor_set_layout, VkDescriptorPool descriptor_pool,
 	VkDevice device, std::vector<VkBuffer>& uniform_buffers, VkImageView texture_image_view, VkSampler texture_sampler);
 std::vector<VkCommandBuffer> create_command_buffers(VkCommandPool command_pool, VkDevice device);
+
+void create_depth_resource(VkDevice device, VkPhysicalDevice physical_device) {
+
 void create_texture_image(VkDevice device, VkPhysicalDevice physical_device, VkImage& out_image,
 	VkDeviceMemory& out_image_memory, VkCommandPool command_pool, VkQueue graphics_queue);
 VkImageView create_texture_image_view(VkDevice device, VkImage texture_image);
@@ -177,6 +190,7 @@ QueueFamilyIndices get_queue_families(const VkPhysicalDevice device, VkSurfaceKH
 bool queue_families_validated(QueueFamilyIndices indices);
 SwapChainSupportInfo get_swap_chain_support(VkPhysicalDevice device, VkSurfaceKHR surface);
 int rate_device_suitability(VkPhysicalDevice device, VkSurfaceKHR surface);
+VkFormat find_supported_format(const std::vector<VkFormat>& candidates, VkImageTiling tiling, VkFormatFeatureFlags features, VkPhysicalDevice physical_device);
 static VkVertexInputBindingDescription get_vertex_binding_description();
 static std::array<VkVertexInputAttributeDescription, 3> get_vertex_attribute_descriptions();
 uint32_t get_memory_type(uint32_t type_filter, VkMemoryPropertyFlags properties, VkPhysicalDevice physical_device);
@@ -184,6 +198,7 @@ VkBuffer create_vulkan_buffer(VkDevice device, VkPhysicalDevice physical_device,
 void copy_vulkan_buffer(VkBuffer src, VkBuffer dst, VkDeviceSize size, VkDevice device, VkCommandPool command_pool, VkQueue graphics_queue);
 void create_vulkan_image(uint32_t width, uint32_t height, VkDevice device, VkPhysicalDevice physical_device, VkFormat format, VkImageTiling tiling,
 	VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImage& out_image, VkDeviceMemory& out_image_memory);
+VkImageView create_vulkan_image_view(VkImage image, VkFormat format, VkImageAspectFlags aspect_flags, VkDevice device);
 void transition_image_layout(VkImage image, VkFormat format, VkImageLayout old_layout, VkImageLayout new_layout,
 	VkCommandPool command_pool, VkDevice device, VkQueue graphics_queue);
 void copy_buffer_to_image(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height,
