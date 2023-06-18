@@ -1,0 +1,7 @@
+﻿  vulkan.cpp
+  Generating code
+  Previous IPDB and IOBJ mismatch, fall back to full compilation.
+C:\Users\thejo\source\repos\Vulkan-Tutorial\Vulkan-Tutorial\vulkan.cpp(1190): warning C4715: 'find_depth_format': not all control paths return a value
+  All 1922 functions were compiled because no usable IPDB/IOBJ from previous compilation was found.
+  Finished generating code
+  Vulkan-Tutorial.vcxproj -> C:\Users\thejo\source\repos\Vulkan-Tutorial\x64\Release\Vulkan-Tutorial.exe

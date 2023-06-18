@@ -2,7 +2,7 @@
 <Project>
   <ProjectOutputs>
     <ProjectOutput>
-      <FullPath>C:\Users\thejo\Documents\GitHub\Vulkan-Tutorial\x64\Debug\Vulkan-Tutorial.exe</FullPath>
+      <FullPath>C:\Users\thejo\source\repos\Vulkan-Tutorial\x64\Debug\Vulkan-Tutorial.exe</FullPath>
     </ProjectOutput>
   </ProjectOutputs>
   <ContentFiles />

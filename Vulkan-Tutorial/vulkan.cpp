@@ -15,11 +15,12 @@ Vulkan init_vulkan(HINSTANCE hinst, HWND hwnd) {
 	vulkan.device = create_logical_device(vulkan.physical_device, vulkan.surface, vulkan.graphics_queue, vulkan.present_queue);
 	vulkan.swap_chain = create_swap_chain(vulkan.physical_device, vulkan.surface, vulkan.device, IVec2{WIN_WIDTH, WIN_HEIGHT}, vulkan.swap_chain_images, vulkan.swap_chain_format, vulkan.swap_chain_extent);
 	vulkan.swap_chain_image_views = create_swap_chain_image_views(vulkan.swap_chain_images, vulkan.swap_chain_format, vulkan.device);
-	vulkan.render_pass = create_render_pass(vulkan.swap_chain_format, vulkan.device);
+	vulkan.render_pass = create_render_pass(vulkan.swap_chain_format, vulkan.device, vulkan.physical_device);
 	vulkan.descriptor_set_layout = create_descriptor_set_layout(vulkan.device);
 	vulkan.graphics_pipeline = create_graphics_pipeline(vulkan.device, vulkan.swap_chain_extent, vulkan.render_pass, vulkan.pipeline_layout, vulkan.descriptor_set_layout);
-	vulkan.swap_chain_framebuffers = create_framebuffers(vulkan.swap_chain_image_views, vulkan.render_pass, vulkan.swap_chain_extent, vulkan.device);
 	vulkan.command_pool = create_command_pool(vulkan.physical_device, vulkan.surface, vulkan.device);
+	create_depth_resources(vulkan.device, vulkan.physical_device, vulkan.swap_chain_extent, vulkan.depth_image, vulkan.depth_image_memory, vulkan.depth_image_view);
+	vulkan.swap_chain_framebuffers = create_framebuffers(vulkan.swap_chain_image_views, vulkan.depth_image_view, vulkan.render_pass, vulkan.swap_chain_extent, vulkan.device);
 	create_texture_image(vulkan.device, vulkan.physical_device, vulkan.texture_image, vulkan.texture_image_memory, vulkan.command_pool, vulkan.graphics_queue);
 	vulkan.texture_image_view = create_texture_image_view(vulkan.device, vulkan.texture_image);
 	vulkan.texture_sampler = create_texture_sampler(vulkan.device, vulkan.physical_device);
@@ -331,7 +332,7 @@ std::vector<VkImageView> create_swap_chain_image_views(std::vector<VkImage>& ima
 	return image_views;
 }
 
-VkRenderPass create_render_pass(VkFormat swap_chain_image_format, VkDevice device) {
+VkRenderPass create_render_pass(VkFormat swap_chain_image_format, VkDevice device, VkPhysicalDevice physical_device) {
 	VkAttachmentDescription color_attachment{};
 	color_attachment.format = swap_chain_image_format;
 	color_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -342,28 +343,44 @@ VkRenderPass create_render_pass(VkFormat swap_chain_image_format, VkDevice devic
 	color_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 	color_attachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
+	VkAttachmentDescription depth_attachment{};
+	depth_attachment.format = find_depth_format(physical_device);
+	depth_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
+	depth_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+	depth_attachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	depth_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+	depth_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	depth_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	depth_attachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
 	VkAttachmentReference color_attachment_ref{};
 	color_attachment_ref.attachment = 0;
 	color_attachment_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
+	VkAttachmentReference depth_attachment_ref{};
+	depth_attachment_ref.attachment = 1;
+	depth_attachment_ref.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
 	VkSubpassDescription subpass{};
 	subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
 	subpass.colorAttachmentCount = 1;
-	// index of attachment referenced in frag shader: layout(location = 0) out vec4 outColor
 	subpass.pColorAttachments = &color_attachment_ref;
+	subpass.pDepthStencilAttachment = &depth_attachment_ref;
 
 	VkSubpassDependency dependency{};
 	dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
 	dependency.dstSubpass = 0;
-	dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+	dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
 	dependency.srcAccessMask = 0;
-	dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-	dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+	dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+	dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+
+	std::array<VkAttachmentDescription, 2> attachments = { color_attachment, depth_attachment };
 
 	VkRenderPassCreateInfo render_pass_info{};
 	render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-	render_pass_info.attachmentCount = 1;
-	render_pass_info.pAttachments = &color_attachment;
+	render_pass_info.attachmentCount = static_cast<uint32_t>(attachments.size());
+	render_pass_info.pAttachments = attachments.data();
 	render_pass_info.subpassCount = 1;
 	render_pass_info.pSubpasses = &subpass;
 	render_pass_info.dependencyCount = 1;
@@ -525,6 +542,18 @@ VkPipeline create_graphics_pipeline(VkDevice device, VkExtent2D swap_chain_exten
 		throw std::runtime_error("Failed to create pipeline layout!");
 	}
 
+	VkPipelineDepthStencilStateCreateInfo depth_stencil{};
+	depth_stencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+	depth_stencil.depthTestEnable = VK_TRUE;
+	depth_stencil.depthWriteEnable = VK_TRUE;
+	depth_stencil.depthCompareOp = VK_COMPARE_OP_LESS;
+	depth_stencil.depthBoundsTestEnable = VK_FALSE;
+	depth_stencil.minDepthBounds = 0.0f; // optional
+	depth_stencil.maxDepthBounds = 1.0f; // optional
+	depth_stencil.stencilTestEnable = VK_FALSE;
+	depth_stencil.front = {}; // optional
+	depth_stencil.back = {}; // optional
+
 	VkGraphicsPipelineCreateInfo pipeline_info{};
 	pipeline_info.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
 	pipeline_info.stageCount = 2;
@@ -534,7 +563,7 @@ VkPipeline create_graphics_pipeline(VkDevice device, VkExtent2D swap_chain_exten
 	pipeline_info.pViewportState = &viewport_state_info;
 	pipeline_info.pRasterizationState = &rasterizer_info;
 	pipeline_info.pMultisampleState = &multisampling_info;
-	pipeline_info.pDepthStencilState = nullptr; // Optional
+	pipeline_info.pDepthStencilState = &depth_stencil;
 	pipeline_info.pColorBlendState = &color_blending_info;
 	pipeline_info.pDynamicState = &dynamic_state_info;
 	pipeline_info.layout = out_layout;
@@ -568,19 +597,20 @@ VkShaderModule create_shader_module(const std::vector<char>& code, VkDevice devi
 	return shader_module;
 }
 
-std::vector<VkFramebuffer> create_framebuffers(std::vector<VkImageView>& swap_chain_image_views, VkRenderPass render_pass, VkExtent2D swap_chain_extent, VkDevice device) {
+std::vector<VkFramebuffer> create_framebuffers(std::vector<VkImageView>& swap_chain_image_views, VkImageView depth_image_view, VkRenderPass render_pass, VkExtent2D swap_chain_extent, VkDevice device) {
 	std::vector<VkFramebuffer> swap_chain_framebuffers;
 	swap_chain_framebuffers.resize(swap_chain_image_views.size());
 	for (size_t i = 0; i < swap_chain_image_views.size(); ++i) {
-		VkImageView attachments[] = {
-			swap_chain_image_views[i]
+		std::array<VkImageView, 2> attachments = {
+			swap_chain_image_views[i],
+			depth_image_view
 		};
 
 		VkFramebufferCreateInfo framebuffer_info{};
 		framebuffer_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
 		framebuffer_info.renderPass = render_pass;
-		framebuffer_info.attachmentCount = 1;
-		framebuffer_info.pAttachments = attachments;
+		framebuffer_info.attachmentCount = static_cast<uint32_t>(attachments.size());
+		framebuffer_info.pAttachments = attachments.data();
 		framebuffer_info.width = swap_chain_extent.width;
 		framebuffer_info.height = swap_chain_extent.height;
 		framebuffer_info.layers = 1;
@@ -760,20 +790,11 @@ std::vector<VkCommandBuffer> create_command_buffers(VkCommandPool command_pool, 
 	return command_buffers;
 }
 
-// WORK
-void create_depth_resource(VkDevice device, VkPhysicalDevice physical_device) {
-	// This was a helper function in the tutorial that would have been called find_depth_format, but I'm not sure why we would do such a FUCKHEAD thing
-	VkFormat depth_format = find_supported_format(
-		{VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT},
-        VK_IMAGE_TILING_OPTIMAL,
-        VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT,
-		physical_device
-	);
-	// This was a helper function that would have been called has_stencil_component, but I inlined it for the same reason (FUCKHEAD energies).
-	bool format_has_stencil_component = (format == VK_FORMAT_D32_SFLOAT_S8_UINT || format == VK_FORMAT_D24_UNORM_S8_UINT);
-
+void create_depth_resources(VkDevice device, VkPhysicalDevice physical_device, VkExtent2D swap_chain_extent, 
+VkImage& out_depth_image, VkDeviceMemory& out_depth_image_memory, VkImageView& out_depth_image_view) {
+	VkFormat depth_format = find_depth_format(physical_device);
 	create_vulkan_image(swap_chain_extent.width, swap_chain_extent.height, device, physical_device, depth_format, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, out_depth_image, out_depth_image_memory);
-	out_depth_image_view = create_image_view(out_depth_image, depth_format, VK_IMAGE_ASPECT_DEPTH_BIT, device);
+	out_depth_image_view = create_vulkan_image_view(out_depth_image, depth_format, VK_IMAGE_ASPECT_DEPTH_BIT, device);
 }
 
 void create_texture_image(VkDevice device, VkPhysicalDevice physical_device, VkImage& out_image, 
@@ -788,8 +809,9 @@ VkDeviceMemory& out_image_memory, VkCommandPool command_pool, VkQueue graphics_q
 		throw std::runtime_error("Failed to load texture image!");
 	}
 
+	VkBuffer staging_buffer;
 	VkDeviceMemory staging_buffer_memory;
-	VkBuffer staging_buffer = create_vulkan_buffer(device, physical_device, image_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+	staging_buffer = create_vulkan_buffer(device, physical_device, image_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
 		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, staging_buffer_memory);
 
 	void* data;
@@ -839,9 +861,6 @@ VkSampler create_texture_sampler(VkDevice device, VkPhysicalDevice physical_devi
 	sampler_info.compareEnable = VK_FALSE;
 	sampler_info.compareOp = VK_COMPARE_OP_ALWAYS;
 	sampler_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-	sampler_info.mipLodBias = 0.0f;
-	sampler_info.minLod = 0.0f;
-	sampler_info.maxLod = 0.0f;
 
 	VkSampler texture_sampler;
 	if(vkCreateSampler(device, &sampler_info, nullptr, &texture_sampler) != VK_SUCCESS) {
@@ -884,15 +903,18 @@ VkBuffer vertex_buffer, VkBuffer index_buffer, VkPipelineLayout pipeline_layout,
 		throw std::runtime_error("Failed to begin recording command buffer!");
 	}
 
+	std::array<VkClearValue, 2> clear_values{};
+	clear_values[0].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
+	clear_values[1].depthStencil = { 1.0, 0 };
+
 	VkRenderPassBeginInfo render_pass_info{};
 	render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
 	render_pass_info.renderPass = render_pass;
 	render_pass_info.framebuffer = swap_chain_framebuffers[image_index]; // the correct image on the swapchain determined by image_index
 	render_pass_info.renderArea.offset = { 0, 0 };
 	render_pass_info.renderArea.extent = swap_chain_extent;
-	VkClearValue clear_color = { {{0.0f, 0.0f, 0.0f, 1.0f}} };
-	render_pass_info.clearValueCount = 1;
-	render_pass_info.pClearValues = &clear_color;
+	render_pass_info.clearValueCount = static_cast<uint32_t>(clear_values.size());
+	render_pass_info.pClearValues = clear_values.data();
 
 	vkCmdBeginRenderPass(command_buffer, &render_pass_info, VK_SUBPASS_CONTENTS_INLINE);
 	vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphics_pipeline);
@@ -1007,17 +1029,18 @@ void update_uniform_buffer(uint32_t current_image, VkExtent2D swap_chain_extent,
 RecreateSwapChainResult recreate_swap_chain(Vulkan& vulkan, HWND hwnd) {
 	IVec2 window_size = get_window_size(hwnd);
 	if (window_size.x == 0 || window_size.y == 0) {
-		// TODO: window size doesn't end up being 0 on either of these, for some reason.
 		return RECREATE_SWAP_CHAIN_WINDOW_MINIMIZED;
 	}
 	
 	vkDeviceWaitIdle(vulkan.device);
 
-	cleanup_swap_chain(vulkan.device, vulkan.swap_chain_framebuffers, vulkan.swap_chain_image_views, vulkan.swap_chain);
+	cleanup_swap_chain(vulkan.device, vulkan.swap_chain_framebuffers, vulkan.swap_chain_image_views, vulkan.swap_chain,
+		vulkan.depth_image_view, vulkan.depth_image, vulkan.depth_image_memory);
 	vulkan.swap_chain = create_swap_chain(vulkan.physical_device, vulkan.surface, vulkan.device, window_size, 
 		vulkan.swap_chain_images, vulkan.swap_chain_format, vulkan.swap_chain_extent);
 	vulkan.swap_chain_image_views = create_swap_chain_image_views(vulkan.swap_chain_images, vulkan.swap_chain_format, vulkan.device);
-	vulkan.swap_chain_framebuffers = create_framebuffers(vulkan.swap_chain_image_views, vulkan.render_pass, vulkan.swap_chain_extent, vulkan.device);
+	create_depth_resources(vulkan.device, vulkan.physical_device, vulkan.swap_chain_extent, vulkan.depth_image, vulkan.depth_image_memory, vulkan.depth_image_view);
+	vulkan.swap_chain_framebuffers = create_framebuffers(vulkan.swap_chain_image_views, vulkan.depth_image_view, vulkan.render_pass, vulkan.swap_chain_extent, vulkan.device);
 
 	return RECREATE_SWAP_CHAIN_SUCCESS;
 }
@@ -1154,6 +1177,19 @@ VkFormat find_supported_format(const std::vector<VkFormat>& candidates, VkImageT
 	throw std::runtime_error("Failed to find supported format!");
 }
 
+VkFormat find_depth_format(VkPhysicalDevice physical_device) {
+	return find_supported_format(
+		{ VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT },
+		VK_IMAGE_TILING_OPTIMAL,
+		VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT,
+		physical_device
+	);
+}
+
+bool has_stencil_component(VkFormat format) {
+	return format == VK_FORMAT_D32_SFLOAT_S8_UINT || format == VK_FORMAT_D24_UNORM_S8_UINT;
+}
+
 static VkVertexInputBindingDescription get_vertex_binding_description() {
 	VkVertexInputBindingDescription binding_description{};
 	binding_description.binding = 0; // associated with binding in attribute descriptions?
@@ -1236,15 +1272,15 @@ VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImage& out_image, V
 	VkImageCreateInfo image_info{};
 	image_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
 	image_info.imageType = VK_IMAGE_TYPE_2D;
-	image_info.extent.width = static_cast<uint32_t>(width);
-	image_info.extent.height = static_cast<uint32_t>(height);
+	image_info.extent.width = width;
+	image_info.extent.height = height;
 	image_info.extent.depth = 1;
 	image_info.mipLevels = 1;
 	image_info.arrayLayers = 1;
-	image_info.format = VK_FORMAT_R8G8B8A8_SRGB;
-	image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
+	image_info.format = format;
+	image_info.tiling = tiling;
 	image_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-	image_info.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+	image_info.usage = usage;
 	image_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 	image_info.samples = VK_SAMPLE_COUNT_1_BIT;
 	image_info.flags = 0;
@@ -1259,7 +1295,7 @@ VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImage& out_image, V
 	VkMemoryAllocateInfo alloc_info{};
 	alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
 	alloc_info.allocationSize = mem_requirements.size;
-	alloc_info.memoryTypeIndex = get_memory_type(mem_requirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, physical_device);
+	alloc_info.memoryTypeIndex = get_memory_type(mem_requirements.memoryTypeBits, properties, physical_device);
 
 	if (vkAllocateMemory(device, &alloc_info, nullptr, &out_image_memory) != VK_SUCCESS) {
 		throw std::runtime_error("Failed to allocate image memory!");
@@ -1271,9 +1307,9 @@ VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImage& out_image, V
 VkImageView create_vulkan_image_view(VkImage image, VkFormat format, VkImageAspectFlags aspect_flags, VkDevice device) {
 	VkImageViewCreateInfo view_info{};
 	view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-	view_info.image = texture_image;
+	view_info.image = image;
 	view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
-	view_info.format = VK_FORMAT_R8G8B8A8_SRGB;
+	view_info.format = format;
 	view_info.subresourceRange.aspectMask = aspect_flags;
 	view_info.subresourceRange.baseMipLevel = 0;
 	view_info.subresourceRange.levelCount = 1;
@@ -1285,7 +1321,7 @@ VkImageView create_vulkan_image_view(VkImage image, VkFormat format, VkImageAspe
 		throw std::runtime_error("Failed to create texture image view!");
 	}
 
-	return image_view
+	return image_view;
 }
 
 void transition_image_layout(VkImage image, VkFormat format, VkImageLayout old_layout, VkImageLayout new_layout,
@@ -1369,8 +1405,6 @@ void copy_vulkan_buffer(VkBuffer src, VkBuffer dst, VkDeviceSize size, VkDevice 
 	VkCommandBuffer command_buffer = begin_single_time_commands(command_pool, device);
 
 	VkBufferCopy copy_region{};
-	copy_region.srcOffset = 0;
-	copy_region.dstOffset = 0;
 	copy_region.size = size;
 	vkCmdCopyBuffer(command_buffer, src, dst, 1, &copy_region);
 
@@ -1409,7 +1443,12 @@ void end_single_time_commands(VkCommandBuffer command_buffer, VkQueue graphics_q
 	vkFreeCommandBuffers(device, command_pool, 1, &command_buffer);
 }
 
-void cleanup_swap_chain(VkDevice device, std::vector<VkFramebuffer>& framebuffers, std::vector<VkImageView>& image_views, VkSwapchainKHR swap_chain) {
+void cleanup_swap_chain(VkDevice device, std::vector<VkFramebuffer>& framebuffers, std::vector<VkImageView>& image_views, VkSwapchainKHR swap_chain, 
+VkImageView depth_image_view, VkImage depth_image, VkDeviceMemory depth_image_memory) {
+	vkDestroyImageView(device, depth_image_view, nullptr);
+	vkDestroyImage(device, depth_image, nullptr);
+	vkFreeMemory(device, depth_image_memory, nullptr);
+	
 	for (VkFramebuffer framebuffer : framebuffers) {
 		vkDestroyFramebuffer(device, framebuffer, nullptr);
 	}
@@ -1422,7 +1461,8 @@ void cleanup_swap_chain(VkDevice device, std::vector<VkFramebuffer>& framebuffer
 }
 
 void cleanup_vulkan(Vulkan& vulkan) {
-	cleanup_swap_chain(vulkan.device, vulkan.swap_chain_framebuffers, vulkan.swap_chain_image_views, vulkan.swap_chain); // TODO: swap chain stuff in its own struct to reflect the recreation dependency?
+	cleanup_swap_chain(vulkan.device, vulkan.swap_chain_framebuffers, vulkan.swap_chain_image_views, vulkan.swap_chain,
+		vulkan.depth_image_view, vulkan.depth_image, vulkan.depth_image_memory); // TODO: swap chain stuff in its own struct to reflect the recreation dependency?
 
 	vkDestroyBuffer(vulkan.device, vulkan.vertex_buffer, nullptr);
 	vkFreeMemory(vulkan.device, vulkan.vertex_buffer_memory, nullptr);

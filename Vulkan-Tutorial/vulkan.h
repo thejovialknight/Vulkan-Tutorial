@@ -59,15 +59,15 @@ struct Vertex {
 
 // This is what will be passed by outside, presumptively
 const std::vector<Vertex> vertices = {
-	{{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
-	{{0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
-	{{0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
-	{{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}},
+	{{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+	{{0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
+	{{0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
+	{{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}},
 
-	{{-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
-	{{0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
-	{{0.5f, 0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
-	{{-0.5f, 0.5f, -0.5f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}},
+	{{-0.5f, -0.5f, -0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+	{{0.5f, -0.5f, -0.0f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
+	{{0.5f, 0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
+	{{-0.5f, 0.5f, -0.5f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}},
 };
 
 const std::vector<uint16_t> indices = {
@@ -156,11 +156,11 @@ VkDevice create_logical_device(VkPhysicalDevice physical_device, VkSurfaceKHR su
 VkSwapchainKHR create_swap_chain(VkPhysicalDevice physical_device, VkSurfaceKHR surface, VkDevice device, IVec2 window_size,
 	std::vector<VkImage>& out_images, VkFormat& out_format, VkExtent2D& out_extent);
 std::vector<VkImageView> create_swap_chain_image_views(std::vector<VkImage>& images, VkFormat format, VkDevice device);
-VkRenderPass create_render_pass(VkFormat swap_chain_image_format, VkDevice device);
+VkRenderPass create_render_pass(VkFormat swap_chain_image_format, VkDevice device, VkPhysicalDevice physical_device);
 VkDescriptorSetLayout create_descriptor_set_layout(VkDevice device);
 VkPipeline create_graphics_pipeline(VkDevice device, VkExtent2D swap_chain_extent, VkRenderPass render_pass, VkPipelineLayout& out_layout, VkDescriptorSetLayout descriptor_set_layout);
 VkShaderModule create_shader_module(const std::vector<char>& code, VkDevice device);
-std::vector<VkFramebuffer> create_framebuffers(std::vector<VkImageView>& swap_chain_image_views, VkRenderPass render_pass, VkExtent2D swap_chain_extent, VkDevice device);
+std::vector<VkFramebuffer> create_framebuffers(std::vector<VkImageView>& swap_chain_image_views, VkImageView depth_image_view, VkRenderPass render_pass, VkExtent2D swap_chain_extent, VkDevice device);
 VkCommandPool create_command_pool(VkPhysicalDevice physical_device, VkSurfaceKHR surface, VkDevice device);
 VkBuffer create_vertex_buffer(VkDevice device, VkPhysicalDevice physical_device, VkDeviceMemory& out_buffer_memory, VkCommandPool command_pool, VkQueue graphics_queue);
 VkBuffer create_index_buffer(VkDevice device, VkPhysicalDevice physical_device, VkCommandPool command_pool, VkQueue graphics_queue, VkDeviceMemory& out_buffer_memory);
@@ -170,9 +170,8 @@ VkDescriptorPool create_descriptor_pool(VkDevice device);
 std::vector<VkDescriptorSet> create_descriptor_sets(VkDescriptorSetLayout descriptor_set_layout, VkDescriptorPool descriptor_pool,
 	VkDevice device, std::vector<VkBuffer>& uniform_buffers, VkImageView texture_image_view, VkSampler texture_sampler);
 std::vector<VkCommandBuffer> create_command_buffers(VkCommandPool command_pool, VkDevice device);
-
-void create_depth_resource(VkDevice device, VkPhysicalDevice physical_device) {
-
+void create_depth_resources(VkDevice device, VkPhysicalDevice physical_device, VkExtent2D swap_chain_extent,
+	VkImage& out_depth_image, VkDeviceMemory& out_depth_image_memory, VkImageView& out_depth_image_view);
 void create_texture_image(VkDevice device, VkPhysicalDevice physical_device, VkImage& out_image,
 	VkDeviceMemory& out_image_memory, VkCommandPool command_pool, VkQueue graphics_queue);
 VkImageView create_texture_image_view(VkDevice device, VkImage texture_image);
@@ -191,8 +190,7 @@ bool queue_families_validated(QueueFamilyIndices indices);
 SwapChainSupportInfo get_swap_chain_support(VkPhysicalDevice device, VkSurfaceKHR surface);
 int rate_device_suitability(VkPhysicalDevice device, VkSurfaceKHR surface);
 VkFormat find_supported_format(const std::vector<VkFormat>& candidates, VkImageTiling tiling, VkFormatFeatureFlags features, VkPhysicalDevice physical_device);
-static VkVertexInputBindingDescription get_vertex_binding_description();
-static std::array<VkVertexInputAttributeDescription, 3> get_vertex_attribute_descriptions();
+VkFormat find_depth_format(VkPhysicalDevice physical_device);
 uint32_t get_memory_type(uint32_t type_filter, VkMemoryPropertyFlags properties, VkPhysicalDevice physical_device);
 VkBuffer create_vulkan_buffer(VkDevice device, VkPhysicalDevice physical_device, VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkDeviceMemory& out_buffer_memory);
 void copy_vulkan_buffer(VkBuffer src, VkBuffer dst, VkDeviceSize size, VkDevice device, VkCommandPool command_pool, VkQueue graphics_queue);
@@ -206,5 +204,9 @@ void copy_buffer_to_image(VkBuffer buffer, VkImage image, uint32_t width, uint32
 VkCommandBuffer begin_single_time_commands(VkCommandPool command_pool, VkDevice device);
 void end_single_time_commands(VkCommandBuffer command_buffer, VkQueue graphics_queue, VkDevice device, VkCommandPool command_pool);
 
-void cleanup_swap_chain(VkDevice device, std::vector<VkFramebuffer>& framebuffers, std::vector<VkImageView>& image_views, VkSwapchainKHR swap_chain);
+void cleanup_swap_chain(VkDevice device, std::vector<VkFramebuffer>& framebuffers, std::vector<VkImageView>& image_views, VkSwapchainKHR swap_chain,
+	VkImageView depth_image_view, VkImage depth_image, VkDeviceMemory depth_image_memory);
 void cleanup_vulkan(Vulkan& vulkan);
+
+static VkVertexInputBindingDescription get_vertex_binding_description();
+static std::array<VkVertexInputAttributeDescription, 3> get_vertex_attribute_descriptions();
