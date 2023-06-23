@@ -2,6 +2,8 @@
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
+#define TINYOBJLOADER_IMPLEMENTATION
+#include <tiny_obj_loader.h>
 
 Vulkan init_vulkan(HINSTANCE hinst, HWND hwnd) {
 	if (ENABLE_VALIDATION_LAYERS) {
@@ -24,8 +26,10 @@ Vulkan init_vulkan(HINSTANCE hinst, HWND hwnd) {
 	create_texture_image(vulkan.device, vulkan.physical_device, vulkan.texture_image, vulkan.texture_image_memory, vulkan.command_pool, vulkan.graphics_queue);
 	vulkan.texture_image_view = create_texture_image_view(vulkan.device, vulkan.texture_image);
 	vulkan.texture_sampler = create_texture_sampler(vulkan.device, vulkan.physical_device);
-	vulkan.vertex_buffer = create_vertex_buffer(vulkan.device, vulkan.physical_device, vulkan.vertex_buffer_memory, vulkan.command_pool, vulkan.graphics_queue);
-	vulkan.index_buffer = create_index_buffer(vulkan.device, vulkan.physical_device, vulkan.command_pool, vulkan.graphics_queue, vulkan.index_buffer_memory);
+	
+	load_model(vulkan.vertices, vulkan.indices);
+	vulkan.vertex_buffer = create_vertex_buffer(vulkan.vertices, vulkan.device, vulkan.physical_device, vulkan.vertex_buffer_memory, vulkan.command_pool, vulkan.graphics_queue);
+	vulkan.index_buffer = create_index_buffer(vulkan.indices, vulkan.device, vulkan.physical_device, vulkan.command_pool, vulkan.graphics_queue, vulkan.index_buffer_memory);
 	create_uniform_buffers(vulkan.device, vulkan.physical_device, vulkan.uniform_buffers, vulkan.uniform_buffers_memory, vulkan.uniform_buffers_mapped);
 	vulkan.descriptor_pool = create_descriptor_pool(vulkan.device);
 	vulkan.descriptor_sets = create_descriptor_sets(vulkan.descriptor_set_layout, vulkan.descriptor_pool, vulkan.device, vulkan.uniform_buffers, vulkan.texture_image_view, vulkan.texture_sampler);
@@ -639,7 +643,8 @@ VkCommandPool create_command_pool(VkPhysicalDevice physical_device, VkSurfaceKHR
 	return command_pool;
 }
 
-VkBuffer create_vertex_buffer(VkDevice device, VkPhysicalDevice physical_device, VkDeviceMemory& out_buffer_memory, VkCommandPool command_pool, VkQueue graphics_queue) {
+VkBuffer create_vertex_buffer(std::vector<Vertex>& vertices, VkDevice device, VkPhysicalDevice physical_device,
+VkDeviceMemory& out_buffer_memory, VkCommandPool command_pool, VkQueue graphics_queue) {
 	VkDeviceSize buffer_size = sizeof(vertices[0]) * vertices.size();
 
 	VkBuffer staging_buffer;
@@ -662,7 +667,8 @@ VkBuffer create_vertex_buffer(VkDevice device, VkPhysicalDevice physical_device,
 	return vertex_buffer;
 }
 
-VkBuffer create_index_buffer(VkDevice device, VkPhysicalDevice physical_device, VkCommandPool command_pool, VkQueue graphics_queue, VkDeviceMemory& out_buffer_memory) {
+VkBuffer create_index_buffer(std::vector<uint32_t>& indices, VkDevice device, VkPhysicalDevice physical_device, VkCommandPool command_pool, 
+VkQueue graphics_queue, VkDeviceMemory& out_buffer_memory) {
 	VkDeviceSize buffer_size = sizeof(indices[0]) * indices.size();
 
 	VkBuffer staging_buffer;
@@ -802,7 +808,7 @@ VkDeviceMemory& out_image_memory, VkCommandPool command_pool, VkQueue graphics_q
 	int tex_width;
 	int tex_height;
 	int tex_channels;
-	stbi_uc* pixels = stbi_load("textures/texture.jpg", &tex_width, &tex_height, &tex_channels, STBI_rgb_alpha);
+	stbi_uc* pixels = stbi_load(TEXTURE_PATH.c_str(), &tex_width, &tex_height, &tex_channels, STBI_rgb_alpha);
 	VkDeviceSize image_size = tex_width * tex_height * 4;
 	
 	if(!pixels) {
@@ -893,7 +899,8 @@ void create_sync_objects(VkDevice device, std::vector<VkSemaphore>& image_availa
 
 void record_command_buffer(VkCommandBuffer command_buffer, uint32_t image_index, VkRenderPass render_pass,
 std::vector<VkFramebuffer>& swap_chain_framebuffers, VkExtent2D swap_chain_extent, VkPipeline graphics_pipeline,
-VkBuffer vertex_buffer, VkBuffer index_buffer, VkPipelineLayout pipeline_layout, std::vector<VkDescriptorSet>& descriptor_sets, uint32_t current_frame) {
+VkBuffer vertex_buffer, VkBuffer index_buffer, VkPipelineLayout pipeline_layout, std::vector<VkDescriptorSet>& descriptor_sets, 
+std::vector<Vertex>& vertices, std::vector<uint32_t>& indices, uint32_t current_frame) {
 	VkCommandBufferBeginInfo begin_info{};
 	begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 	begin_info.flags = 0;
@@ -922,7 +929,7 @@ VkBuffer vertex_buffer, VkBuffer index_buffer, VkPipelineLayout pipeline_layout,
 	VkBuffer vertex_buffers[] = { vertex_buffer };
 	VkDeviceSize offsets[] = {0};
 	vkCmdBindVertexBuffers(command_buffer, 0, 1, vertex_buffers, offsets);
-	vkCmdBindIndexBuffer(command_buffer, index_buffer, 0, VK_INDEX_TYPE_UINT16);
+	vkCmdBindIndexBuffer(command_buffer, index_buffer, 0, VK_INDEX_TYPE_UINT32);
 
 	VkViewport viewport{};
 	viewport.x = 0.0f;
@@ -949,7 +956,7 @@ VkBuffer vertex_buffer, VkBuffer index_buffer, VkPipelineLayout pipeline_layout,
 	}
 }
 
-DrawFrameResult draw_frame(Vulkan& vulkan, HWND hwnd) {
+DrawFrameResult draw_frame(Vulkan& vulkan, HWND hwnd, double cam_position) {
 	vkWaitForFences(vulkan.device, 1, &vulkan.in_flight_fences[vulkan.current_frame], VK_TRUE, UINT64_MAX);
 
 	uint32_t image_index;
@@ -966,9 +973,10 @@ DrawFrameResult draw_frame(Vulkan& vulkan, HWND hwnd) {
 
 	vkResetCommandBuffer(vulkan.command_buffers[vulkan.current_frame], 0);
 	record_command_buffer(vulkan.command_buffers[vulkan.current_frame], image_index, vulkan.render_pass, vulkan.swap_chain_framebuffers,
-		vulkan.swap_chain_extent, vulkan.graphics_pipeline, vulkan.vertex_buffer, vulkan.index_buffer, vulkan.pipeline_layout, vulkan.descriptor_sets, vulkan.current_frame);
+		vulkan.swap_chain_extent, vulkan.graphics_pipeline, vulkan.vertex_buffer, vulkan.index_buffer, vulkan.pipeline_layout, vulkan.descriptor_sets, 
+		vulkan.vertices, vulkan.indices, vulkan.current_frame);
 
-	update_uniform_buffer(vulkan.current_frame, vulkan.swap_chain_extent, vulkan.uniform_buffers_mapped);
+	update_uniform_buffer(vulkan.current_frame, vulkan.swap_chain_extent, vulkan.uniform_buffers_mapped, cam_position);
 
 	VkSubmitInfo submit_info{};
 	submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -1012,7 +1020,7 @@ DrawFrameResult draw_frame(Vulkan& vulkan, HWND hwnd) {
 	return DRAW_FRAME_SUCCESS;
 }
 
-void update_uniform_buffer(uint32_t current_image, VkExtent2D swap_chain_extent, std::vector<void*>& uniform_buffers_mapped) {
+void update_uniform_buffer(uint32_t current_image, VkExtent2D swap_chain_extent, std::vector<void*>& uniform_buffers_mapped, double cam_position) {
 	static std::chrono::steady_clock::time_point start_time = std::chrono::high_resolution_clock::now();
 
 	std::chrono::steady_clock::time_point current_time = std::chrono::high_resolution_clock::now();
@@ -1020,7 +1028,7 @@ void update_uniform_buffer(uint32_t current_image, VkExtent2D swap_chain_extent,
 
 	UniformBufferObject ubo{};
 	ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-	ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+	ubo.view = glm::lookAt(glm::vec3(cam_position, cam_position, cam_position), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
 	ubo.proj = glm::perspective(glm::radians(45.0f), swap_chain_extent.width / (float)swap_chain_extent.height, 0.1f, 10.0f);
 	ubo.proj[1][1] *= -1;
 	memcpy(uniform_buffers_mapped[current_image], &ubo, sizeof(ubo));
@@ -1441,6 +1449,45 @@ void end_single_time_commands(VkCommandBuffer command_buffer, VkQueue graphics_q
 	vkQueueSubmit(graphics_queue, 1, &submit_info, VK_NULL_HANDLE);
 	vkQueueWaitIdle(graphics_queue);
 	vkFreeCommandBuffers(device, command_pool, 1, &command_buffer);
+}
+
+void load_model(std::vector<Vertex>& vertices, std::vector<uint32_t>& indices) {
+	tinyobj::attrib_t attrib;
+	std::vector<tinyobj::shape_t> shapes;
+	std::vector<tinyobj::material_t> materials;
+	std::string warn;
+	std::string err;
+
+	if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, MODEL_PATH.c_str())) {
+		throw std::runtime_error(warn + err);
+	}
+
+	std::unordered_map<Vertex, uint32_t> unique_vertices{};
+	for (const tinyobj::shape_t& shape : shapes) { // TODO: tutorial used auto here. idk
+		for (const tinyobj::index_t& index : shape.mesh.indices) {
+			Vertex vertex{};
+
+			vertex.position = {
+				attrib.vertices[3 * index.vertex_index + 0],
+				attrib.vertices[3 * index.vertex_index + 1],
+				attrib.vertices[3 * index.vertex_index + 2]
+			};
+
+			vertex.texture_coordinates = {
+				attrib.texcoords[2 * index.texcoord_index + 0],
+				1.0f - attrib.texcoords[2 * index.texcoord_index + 1]
+			};
+
+			vertex.color = { 1.0f, 1.0f, 1.0f };
+
+			if (unique_vertices.count(vertex) == 0) {
+				unique_vertices[vertex] = static_cast<uint32_t>(vertices.size());
+				vertices.push_back(vertex);
+			}
+
+			indices.push_back(unique_vertices[vertex]);
+		}
+	}
 }
 
 void cleanup_swap_chain(VkDevice device, std::vector<VkFramebuffer>& framebuffers, std::vector<VkImageView>& image_views, VkSwapchainKHR swap_chain, 

@@ -49,11 +49,14 @@ int WINAPI WinMain(HINSTANCE hinst, HINSTANCE hprevinst, LPSTR lpcmdline, int nc
 #pragma endregion
 
 	Vulkan vulkan = init_vulkan(hinst, hwnd);
+	double input = 0;
+	double cam_position = 3;
 
 #pragma region Loop
 	// Message handling
 	MSG msg = { 0 };
 	while (TRUE) {
+		std::cout << "loop" << std::endl;
 		// Message handling
 		if (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
 			TranslateMessage(&msg);
@@ -61,9 +64,34 @@ int WINAPI WinMain(HINSTANCE hinst, HINSTANCE hprevinst, LPSTR lpcmdline, int nc
 			if (msg.message == WM_QUIT) {
 				break;
 			}
+
+			if (msg.message == WM_KEYUP) {
+				switch (msg.wParam) {
+				case VK_UP:
+					input += 1;
+					std::cout << "UP" << std::endl;
+					break;
+				case VK_DOWN:
+					input -= 1;
+					break;
+				}
+			}
+
+			if (msg.message == WM_KEYDOWN) {
+				switch (msg.wParam) {
+				case VK_UP:
+					input -= 1;
+					break;
+				case VK_DOWN:
+					input += 1;
+					break;
+				}
+			}
+
+			cam_position += input * 0.1;
 		}
 		else {
-			DrawFrameResult draw_result = draw_frame(vulkan, hwnd);
+			DrawFrameResult draw_result = draw_frame(vulkan, hwnd, cam_position);
 			if (draw_result == DRAW_FRAME_RECREATION_REQUESTED) {
 				RecreateSwapChainResult recreate_result = recreate_swap_chain(vulkan, hwnd);
 				if (recreate_result == RECREATE_SWAP_CHAIN_WINDOW_MINIMIZED) {
